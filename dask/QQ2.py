@@ -70,6 +70,8 @@ sns.set_theme(style="whitegrid")
 
 # Create bar plot for total views
 bar_plot = sns.barplot(x='price_range', y='total_views', hue='category_groups', data=agg_df, alpha=0.6, palette="Set2")
+bar_plot.set_ylim(0, agg_df['total_views'].max() + 10)  # Adjust this based on the maximum total views
+print(agg_df[['price_range', 'category_groups', 'total_views']])  # Debugging print
 
 # Create a secondary y-axis for conversion rates
 ax2 = bar_plot.twinx()
@@ -84,7 +86,8 @@ line_plot = sns.lineplot(
 )
 
 # Set y-limits for conversion rates if needed
-ax2.set_ylim(0, 0.05)  # Adjust this based on your conversion rate range
+max_conversion_rate = agg_df['conversion_rate'].max()
+ax2.set_ylim(0, max_conversion_rate + 0.05)  # Adjust the buffer as needed
 
 # Add labels and title
 plt.title('Total Views and Conversion Rates by Price Range and Category Groups ')
@@ -92,7 +95,7 @@ bar_plot.set_ylabel('Total Views')
 ax2.set_ylabel('Conversion Rate')
 plt.xlabel('Price Range')
 plt.axhline(0, color='gray', lw=1)
-plt.legend(loc='upper left')
+plt.legend(loc='upper right')
 plt.grid()
 
 # Save the plot to a file
@@ -100,4 +103,23 @@ plt.savefig('prgory.png')
 plt.close()
 
 print("Plot saved as 'prgory.png'.")
+
+
+1. Loading the Dataset
+2. Extracting Category Groups
+3. Defining Price Ranges
+4. Assigning Price Ranges
+5. Aggregating Views and Cart Events
+6. Merging Aggregated Data (left join of views and carts, so the views are reserved even if there are no corresponding rows in cart)
+7. Filling Missing Values
+8. Calculating Conversion Rates (ratio of total add to cart to total views)
+9. Converting Price Range to Categorical (so to organize it in ascending order)
+10. Plotting
+
+
+
+
+
+
+
 
