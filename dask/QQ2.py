@@ -33,7 +33,9 @@ def assign_price_range(price):
     else:
         return '500+'
 
-# Apply the function to create a new column for price ranges
+# ... (your previous code)
+
+# Apply the function to create a new column for price ranges in the original Dask DataFrame
 df['price_range'] = df['price'].map(assign_price_range, meta=('price', 'object'))
 
 # Aggregate views and cart events separately, using top-level category
@@ -56,13 +58,18 @@ agg_df['total_add_to_cart'] = agg_df['total_add_to_cart'].fillna(0)
 # Compute conversion rates
 agg_df['conversion_rate'] = agg_df['total_add_to_cart'] / agg_df['total_views'].replace(0, pd.NA)  # Avoid division by zero
 
+# Convert 'price_range' to a categorical type with the specified order
+price_order = ['0-20', '21-50', '51-100', '101-200', '201-500', '500+']
+agg_df['price_range'] = pd.Categorical(agg_df['price_range'], categories=price_order, ordered=True)
+
 print(agg_df[['price_range', 'category_groups', 'total_views', 'total_add_to_cart', 'conversion_rate']])
+
 # Plotting (Pandas DataFrame)
 plt.figure(figsize=(12, 6))
 sns.set_theme(style="whitegrid")
 
 # Create bar plot for total views
-bar_plot = sns.barplot(x='price_range', y='total_views', hue='category_groups', data=agg_df, alpha=0.6)
+bar_plot = sns.barplot(x='price_range', y='total_views', hue='category_groups', data=agg_df, alpha=0.6, palette="Set2")
 
 # Create a secondary y-axis for conversion rates
 ax2 = bar_plot.twinx()
