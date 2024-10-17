@@ -1,3 +1,4 @@
+
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
 import org.jfree.chart.ChartFactory
@@ -19,48 +20,88 @@ val df = spark.read.parquet(filePath)
 // Extract top-level category from the 'category_code'
 val dfWithTopLevelCategory = df.withColumn("top_level_category", split(col("category_code"), "\\.").getItem(0))
 
-// Group by brand, category, and event type ('view' and 'purchase') to calculate counts
-val groupedDf = dfWithTopLevelCategory.filter(col("event_type").isin("view", "purchase"))
-  .groupBy("brand", "top_level_category", "event_type")
+// Check distinct event types to verify the presence of 'purchase'
+dfWithTopLevelCategory.select("event_type").distinct().show()
+
+// Filter for relevant event types ('view', 'cart', 'purchase')
+val filteredDf = dfWithTopLevelCategory.filter(col("event_type").isin("view", "cart", "purchase"))
+
+// Get distinct categories and event types
+val eventTypes = Seq("view", "cart", "purchase")
+val categoriesDf = dfWithTopLevelCategory.select("top_level_category").distinct()
+
+// Use cross join to ensure all combinations of top_level_category and event_type are present
+val eventTypesDf = eventTypes.toDF("event_type")
+val completeDf = categoriesDf.crossJoin(eventTypesDf)
+
+// Debug: Print the completeDf to verify combinations
+println("Combinations after cross join:")
+completeDf.show()
+
+// Count after cross join
+println(s"Count after cross join: ${completeDf.count()}")
+
+// Group by category and event type to calculate counts
+val groupedDf = filteredDf.groupBy("top_level_category", "event_type")
   .agg(count("*").alias("event_count"))
 
-// Pivot the event type to get separate columns for 'view' and 'purchase' counts 
-val pivotedDf = groupedDf.groupBy("brand", "top_level_category")
-  .pivot("event_type", Seq("view", "purchase"))
+// Perform a left join to ensure no missing combinations, keeping all categories and event types
+val completedGroupedDf = completeDf.join(groupedDf, Seq("top_level_category", "event_type"), "left_outer")
+  .na.fill(0, Seq("event_count"))
+
+// Debug: Print completedGroupedDf to verify after join
+println("Data after left join:")
+completedGroupedDf.show()
+
+// Pivot the event type to get separate columns for 'view', 'cart', and 'purchase' counts
+val pivotedDf = completedGroupedDf.groupBy("top_level_category")
+  .pivot("event_type", eventTypes)
   .agg(first("event_count"))
-  .na.fill(0, Seq("view", "purchase")) // Fill any null values with 0
 
-// Add a column for total engagement (views + purchases)
-val dfWithTotalEngagement = pivotedDf.withColumn("total_engagement", col("view") + col("purchase"))
+// Count the rows after filling missing combinations
+println(s"Count after ensuring all combinations: ${pivotedDf.count()}")
 
-// Select the top 20 brands by total engagement
-val topBrandsDf = dfWithTotalEngagement.orderBy(col("total_engagement").desc).limit(20)
+// Debug: Show the pivoted DataFrame
+println("Pivoted DataFrame:")
+pivotedDf.show()
+
+// Drop rows where all event counts are zero
+val filteredPivotedDf = pivotedDf.filter(!(col("view") === 0 && col("cart") === 0 && col("purchase") === 0))
+
+// Debug: Show the filtered DataFrame
+println("Filtered Pivoted DataFrame (after dropping rows with all zeros):")
+filteredPivotedDf.show()
+
+// Add a column for cart abandonment rate: cart abandonment = max((cart - purchase) / cart, 0)
+val dfWithAbandonmentRate = filteredPivotedDf.withColumn("cart_abandonment_rate", 
+  when(col("cart") > 0, ((col("cart") - col("purchase")) / col("cart")).cast("double"))
+    .otherwise(0.0))
+
+// Debug: Show DataFrame with abandonment rate
+println("DataFrame with Cart Abandonment Rate:")
+dfWithAbandonmentRate.show()
 
 // Collect data for the chart
-val result = topBrandsDf.collect()
-
-// Create a color mapping for each brand
-val uniqueColors = result.map(row => row.getString(0) -> new Color(Random.nextInt(256), Random.nextInt(256), Random.nextInt(256))).toMap
+val result = dfWithAbandonmentRate.collect()
 
 // Create the dataset for JFreeChart (bar chart)
 val dataset = new DefaultCategoryDataset
 result.foreach(row => {
-  val brand = row.getString(0)
-  val category = row.getString(1)
-  val totalEngagement = row.getLong(4) // 'total_engagement'
+  val category = row.getString(0)
+  val abandonmentRate = row.getAs[Double]("cart_abandonment_rate") * 100 // 'cart_abandonment_rate' as a percentage
 
-  // Add data to the dataset for total engagement
-  dataset.addValue(totalEngagement, brand, category) // Use brand as series and category as domain
+  // Add data to the dataset for cart abandonment rate
+  dataset.addValue(math.max(0, abandonmentRate), "Cart Abandonment Rate", category) // Ensure non-negative values
 })
 
-// Create a bar chart for brand engagement by category
+// Create a bar chart for cart abandonment rate by category
 val chart = ChartFactory.createBarChart(
-  "Top 20 Brand Engagement by Category",
+  "Cart Abandonment Rate by Category",
   "Product Category",
-  "Total Engagement (Views + Purchases)",
+  "Cart Abandonment Rate (%)",
   dataset,
   PlotOrientation.VERTICAL,
-  false, // Exclude legend from the chart
+  true, // Include legend
   true,
   false
 )
@@ -71,52 +112,14 @@ val renderer = new BarRenderer()
 renderer.setMaximumBarWidth(0.3) // Increase the bar width to make the bars clearer
 plot.setRenderer(renderer)
 
-// Set unique colors for each brand using the shared color mapping
+// Set unique colors for each category using random colors
 result.zipWithIndex.foreach { case (row, index) =>
-  val brand = row.getString(0)
-  renderer.setSeriesPaint(index, uniqueColors(brand))
+  renderer.setSeriesPaint(index, new Color(Random.nextInt(256), Random.nextInt(256), Random.nextInt(256)))
 }
 
-// Create a separate legend image manually with updated top 20 brands
-val legendWidth = 1000
-val legendHeight = 400
-val legendImage = new BufferedImage(legendWidth, legendHeight, BufferedImage.TYPE_INT_ARGB)
-val graphics: Graphics2D = legendImage.createGraphics()
-
-// Set font for the legend
-graphics.setFont(new Font("SansSerif", Font.PLAIN, 14))
-
-graphics.drawString("Legend:", 10, 20)
-
-// Draw legend entries
-var legendXStart = 10
-var legendYPosition = 40
-val boxSize = 15
-val boxSpacing = 10
-
-uniqueColors.foreach { case (brand, color) =>
-  // Set color and draw the color box
-  graphics.setPaint(color)
-  graphics.fillRect(legendXStart, legendYPosition - boxSize, boxSize, boxSize)
-
-  // Draw the brand name next to the color box
-  graphics.setPaint(Color.BLACK)
-  graphics.drawString(brand, legendXStart + boxSize + boxSpacing, legendYPosition)
-
-  legendYPosition += 25
-  if (legendYPosition > legendHeight - 20) {
-    legendYPosition = 40
-    legendXStart += 250
-  }
-}
-
-// Save the chart and legend as separate PNG files
-val chartFile = new File("top_20_brand_engagement_by_category.png")
+// Save the chart as a PNG file
+val chartFile = new File("cart_abandonment_rate_by_category.png")
 ChartUtils.saveChartAsPNG(chartFile, chart, 1000, 800)
 
-val legendFile = new File("top_20_brand_engagement_legend.png")
-ImageIO.write(legendImage, "png", legendFile)
-
-println("Chart saved as 'top_20_brand_engagement_by_category.png'")
-println("Legend saved as 'top_20_brand_engagement_legend.png'")
+println("Chart saved as 'cart_abandonment_rate_by_category.png'")
 
