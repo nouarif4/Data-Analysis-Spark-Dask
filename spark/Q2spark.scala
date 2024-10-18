@@ -8,7 +8,7 @@ import org.jfree.data.category.DefaultCategoryDataset
 import java.awt.Color
 import java.io.File
 
-// Load data into a DataFrame (replace with the correct path to your Parquet file)
+// Load data into a DataFrame 
 val filePath = "/home/nouarif4/Downloads/SparkCleanedData.parquet"
 val df = spark.read.parquet(filePath)
 
@@ -109,9 +109,9 @@ val plot: CategoryPlot = chart.getCategoryPlot()
 
 // Create a line renderer for conversion rates
 val lineRenderer = new LineAndShapeRenderer()
-lineRenderer.setSeriesPaint(0, Color.RED) // Set conversion rate line color to red
+lineRenderer.setSeriesPaint(0, Color.RED) 
 
-// Create a line renderer for margin of error (upper and lower bounds)
+// Create a line renderer for margin of error 
 val marginRenderer = new LineAndShapeRenderer()
 marginRenderer.setSeriesPaint(0, Color.GRAY) // Set upper bound color
 marginRenderer.setSeriesPaint(1, Color.GRAY) // Set lower bound color
