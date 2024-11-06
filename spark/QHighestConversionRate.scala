@@ -13,6 +13,7 @@ import java.io.File
 
 // Read data from Parquet file
 val df = spark.read.parquet("/home/nouarif4/Downloads/SparkCleanedData.parquet") 
+// in cloud it was val df = spark.read.parquet("gs://datasetspark/DaskCleanedData.parquet/*")
 
 // Clean and process the data to calculate conversion rates, sorted by descending conversion_rate
 val conversionRates = df
